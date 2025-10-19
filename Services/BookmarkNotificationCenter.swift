@@ -1,10 +1,3 @@
-//
-//  BookmarkNotificationCenter.swift
-//  ReaderApp
-//
-//  Created by Assistant on 19/10/25.
-//
-
 import Foundation
 
 extension Notification.Name {

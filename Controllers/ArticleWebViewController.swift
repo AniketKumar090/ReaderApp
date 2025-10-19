@@ -1,20 +1,14 @@
-//
-//  ArticleWebViewController.swift
-//  ReaderApp
-//
-//  Created by Assistant on 19/10/25.
-//
-
 import UIKit
 import WebKit
 
-final class ArticleWebViewController: UIViewController {
+final class ArticleWebViewController: UIViewController, WKNavigationDelegate {
     private let webView = WKWebView(frame: .zero)
     private let url: URL
     private let article: Article
     private let bookmarkRepo = BookmarksRepository.shared
     private let webCache = WebContentCache.shared
-    private var isContentCached = false
+    private var pageFullyLoaded = false
+    private let activityIndicator = UIActivityIndicatorView(style: .large)
 
     init(url: URL, article: Article) {
         self.url = url
@@ -29,8 +23,10 @@ final class ArticleWebViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
-        title = "Web View"
+        title = "Article"
+        webView.navigationDelegate = self
         setupWeb()
+        setupActivityIndicator()
         setupBookmarkButton()
         loadWebContent()
     }
@@ -45,52 +41,113 @@ final class ArticleWebViewController: UIViewController {
             webView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
     }
+    
+    private func setupActivityIndicator() {
+        activityIndicator.translatesAutoresizingMaskIntoConstraints = false
+        activityIndicator.hidesWhenStopped = true
+        view.addSubview(activityIndicator)
+        NSLayoutConstraint.activate([
+            activityIndicator.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            activityIndicator.centerYAnchor.constraint(equalTo: view.centerYAnchor)
+        ])
+    }
 
     private func setupBookmarkButton() {
-        let item = UIBarButtonItem(image: UIImage(systemName: bookmarkRepo.isBookmarked(article) ? "bookmark.fill" : "bookmark"), style: .plain, target: self, action: #selector(toggleBookmark))
+        let isBookmarked = bookmarkRepo.isBookmarked(article)
+        let imageName = isBookmarked ? "bookmark.fill" : "bookmark"
+        let item = UIBarButtonItem(
+            image: UIImage(systemName: imageName),
+            style: .plain,
+            target: self,
+            action: #selector(toggleBookmark)
+        )
         navigationItem.rightBarButtonItem = item
     }
 
     @objc private func toggleBookmark() {
+        let wasBookmarked = bookmarkRepo.isBookmarked(article)
         bookmarkRepo.toggleBookmark(article)
         setupBookmarkButton()
         
-        // Cache web content when bookmarked (additional caching from webview)
-        if bookmarkRepo.isBookmarked(article) && !isContentCached {
+        // If we just bookmarked and page is fully loaded, cache it immediately
+        if !wasBookmarked && pageFullyLoaded {
             cacheCurrentWebContent()
+        }
+        
+        // If we just unbookmarked, remove cached content
+        if wasBookmarked {
+            webCache.removeCachedContent(for: article)
+            print("Removed cached content for unbookmarked article: \(article.title ?? "Unknown")")
         }
     }
     
     private func loadWebContent() {
-        // Check if we have cached content for this article
+        // First check if we have cached content
         if let cachedContent = webCache.getCachedWebContent(for: article) {
-            print("Loading cached content for article: \(article.title ?? "Unknown")")
+            print("✅ Loading cached content for article: \(article.title ?? "Unknown")")
+            // Use the original URL as baseURL so relative resources can load
             webView.loadHTMLString(cachedContent, baseURL: url)
-            isContentCached = true
         } else {
-            print("No cached content found, loading from URL: \(url)")
-            // Load from URL
+            // No cache, try to load from URL
+            print("🌐 Loading from URL: \(url)")
+            activityIndicator.startAnimating()
             webView.load(URLRequest(url: url))
         }
     }
     
     private func cacheCurrentWebContent() {
-        // Wait a bit for the page to fully load before caching
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-            self?.webView.evaluateJavaScript("document.documentElement.outerHTML") { [weak self] result, error in
-                guard let self = self,
-                      let htmlContent = result as? String,
-                      error == nil else { 
-                    print("Failed to get HTML content: \(error?.localizedDescription ?? "Unknown error")")
-                    return 
-                }
-                
-                print("Caching content for article: \(self.article.title ?? "Unknown")")
-                self.webCache.cacheWebContent(for: self.article, htmlContent: htmlContent)
-                self.isContentCached = true
+        webView.evaluateJavaScript("document.documentElement.outerHTML") { [weak self] result, error in
+            guard let self = self,
+                  let htmlContent = result as? String,
+                  error == nil else {
+                print("❌ Failed to get HTML content: \(error?.localizedDescription ?? "Unknown error")")
+                return
             }
+            
+            self.webCache.cacheWebContent(for: self.article, htmlContent: htmlContent)
+            print("💾 Successfully cached content for: \(self.article.title ?? "Unknown")")
+        }
+    }
+    
+    // MARK: - WKNavigationDelegate
+    
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        activityIndicator.stopAnimating()
+        pageFullyLoaded = true
+        
+        // If article is bookmarked, cache the content now that it's fully loaded
+        if bookmarkRepo.isBookmarked(article) {
+            // Wait a moment for any dynamic content to load
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                self?.cacheCurrentWebContent()
+            }
+        }
+        
+        print("✅ Page loaded successfully")
+    }
+    
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        activityIndicator.stopAnimating()
+        print("❌ WebView failed to load: \(error.localizedDescription)")
+        showOfflineError()
+    }
+    
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        activityIndicator.stopAnimating()
+        print("❌ WebView provisional navigation failed: \(error.localizedDescription)")
+        showOfflineError()
+    }
+    
+    private func showOfflineError() {
+        // Only show error if we don't have cached content
+        if webCache.getCachedWebContent(for: article) == nil {
+            let alert = UIAlertController(
+                title: "Unable to Load",
+                message: "This article is not available offline. Please connect to the internet, open this article, and bookmark it to read offline later.",
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "OK", style: .default))
+            present(alert, animated: true)
         }
     }
 }
-
-

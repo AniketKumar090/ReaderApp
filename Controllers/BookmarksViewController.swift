@@ -1,15 +1,9 @@
-//
-//  BookmarksViewController.swift
-//  ReaderApp
-//
-//  Created by Assistant on 19/10/25.
-//
-
 import UIKit
 
 final class BookmarksViewController: UIViewController, UITableViewDataSource, UITableViewDelegate {
     private let tableView = UITableView()
     private let repository = ArticlesRepository()
+    private let bookmarkRepo = BookmarksRepository.shared
     private var allArticles: [Article] = []
 
     override func viewDidLoad() {
@@ -27,13 +21,34 @@ final class BookmarksViewController: UIViewController, UITableViewDataSource, UI
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
+        
+        // Listen for bookmark changes
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleBookmarkChange),
+            name: .bookmarkDidChange,
+            object: nil
+        )
+    }
+    
+    @objc private func handleBookmarkChange(_ notification: Notification) {
+        // Reload the bookmarks list when any bookmark changes
+        Task {
+            let articles = await repository.fetchArticles(forceRefresh: false)
+            self.allArticles = bookmarkRepo.allBookmarked(from: articles)
+            self.tableView.reloadData()
+        }
+    }
+    
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         Task {
             let articles = await repository.fetchArticles(forceRefresh: false)
-            self.allArticles = BookmarksRepository.shared.allBookmarked(from: articles)
+            self.allArticles = bookmarkRepo.allBookmarked(from: articles)
             self.tableView.reloadData()
         }
     }
@@ -44,7 +59,12 @@ final class BookmarksViewController: UIViewController, UITableViewDataSource, UI
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: ArticleCell.reuseId, for: indexPath) as! ArticleCell
-        cell.configure(with: allArticles[indexPath.row], isBookmarked: true)
+        let article = allArticles[indexPath.row]
+        cell.configure(with: article, isBookmarked: true)
+        cell.onBookmarkTapped = { [weak self] in
+            self?.bookmarkRepo.toggleBookmark(article)
+            // Notification will handle the reload
+        }
         return cell
     }
 
@@ -67,5 +87,3 @@ final class BookmarksViewController: UIViewController, UITableViewDataSource, UI
         }
     }
 }
-
-

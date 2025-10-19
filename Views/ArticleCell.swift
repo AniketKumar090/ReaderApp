@@ -1,9 +1,3 @@
-//
-//  ArticleCell.swift
-//  ReaderApp
-//
-//  Created by Assistant on 19/10/25.
-//
 import UIKit
 final class ArticleCell: UITableViewCell {
     static let reuseId = "ArticleCell"

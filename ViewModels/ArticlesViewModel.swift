@@ -1,10 +1,3 @@
-//
-//  ArticlesViewModel.swift
-//  ReaderApp
-//
-//  Created by Assistant on 19/10/25.
-//
-
 import Foundation
 
 final class ArticlesViewModel {
@@ -28,9 +21,6 @@ final class ArticlesViewModel {
         visibleArticles = articles
         isLoading = false
         onChange?()
-        
-        // Pre-cache content for all bookmarked articles
-        BookmarksRepository.shared.preCacheAllBookmarkedArticles(from: articles)
     }
 
     func search(query: String) {
@@ -44,5 +34,3 @@ final class ArticlesViewModel {
         onChange?()
     }
 }
-
-

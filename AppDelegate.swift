@@ -1,10 +1,3 @@
-//
-//  AppDelegate.swift
-//  ReaderApp
-//
-//  Created by Aniket Kumar on 19/10/25.
-//
-
 import UIKit
 import CoreData
 
