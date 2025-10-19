@@ -9,6 +9,7 @@ final class ArticleWebViewController: UIViewController, WKNavigationDelegate {
     private let webCache = WebContentCache.shared
     private var pageFullyLoaded = false
     private let activityIndicator = UIActivityIndicatorView(style: .large)
+    private var didCacheContent = false
 
     init(url: URL, article: Article) {
         self.url = url
@@ -69,16 +70,12 @@ final class ArticleWebViewController: UIViewController, WKNavigationDelegate {
         bookmarkRepo.toggleBookmark(article)
         setupBookmarkButton()
         
-        // If we just bookmarked and page is fully loaded, cache it immediately
-        if !wasBookmarked && pageFullyLoaded {
+        // If we just bookmarked and page is fully loaded but not yet cached, cache it now
+        if !wasBookmarked && pageFullyLoaded && !didCacheContent {
             cacheCurrentWebContent()
         }
         
-        // If we just unbookmarked, remove cached content
-        if wasBookmarked {
-            webCache.removeCachedContent(for: article)
-            print("Removed cached content for unbookmarked article: \(article.title ?? "Unknown")")
-        }
+        // Note: If unbookmarking, the repository already handles removing the cache
     }
     
     private func loadWebContent() {
@@ -87,6 +84,8 @@ final class ArticleWebViewController: UIViewController, WKNavigationDelegate {
             print("✅ Loading cached content for article: \(article.title ?? "Unknown")")
             // Use the original URL as baseURL so relative resources can load
             webView.loadHTMLString(cachedContent, baseURL: url)
+            pageFullyLoaded = true
+            didCacheContent = true
         } else {
             // No cache, try to load from URL
             print("🌐 Loading from URL: \(url)")
@@ -105,6 +104,7 @@ final class ArticleWebViewController: UIViewController, WKNavigationDelegate {
             }
             
             self.webCache.cacheWebContent(for: self.article, htmlContent: htmlContent)
+            self.didCacheContent = true
             print("💾 Successfully cached content for: \(self.article.title ?? "Unknown")")
         }
     }
@@ -115,8 +115,8 @@ final class ArticleWebViewController: UIViewController, WKNavigationDelegate {
         activityIndicator.stopAnimating()
         pageFullyLoaded = true
         
-        // If article is bookmarked, cache the content now that it's fully loaded
-        if bookmarkRepo.isBookmarked(article) {
+        // If article is bookmarked and we haven't cached yet, cache the content now
+        if bookmarkRepo.isBookmarked(article) && !didCacheContent {
             // Wait a moment for any dynamic content to load
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
                 self?.cacheCurrentWebContent()
@@ -143,7 +143,7 @@ final class ArticleWebViewController: UIViewController, WKNavigationDelegate {
         if webCache.getCachedWebContent(for: article) == nil {
             let alert = UIAlertController(
                 title: "Unable to Load",
-                message: "This article is not available offline. Please connect to the internet, open this article, and bookmark it to read offline later.",
+                message: "This article is not available offline. The content will be automatically downloaded in the background once you're online.",
                 preferredStyle: .alert
             )
             alert.addAction(UIAlertAction(title: "OK", style: .default))

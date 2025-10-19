@@ -17,11 +17,20 @@ final class BookmarksRepository {
     }
 
     func toggleBookmark(_ article: Article) {
-        if bookmarkedById.contains(article.id) {
+        let wasBookmarked = bookmarkedById.contains(article.id)
+        
+        if wasBookmarked {
+            // Unbookmarking
             bookmarkedById.remove(article.id)
+            // Remove cached content
+            WebContentCache.shared.removeCachedContent(for: article)
         } else {
+            // Bookmarking
             bookmarkedById.insert(article.id)
+            // Preload content in background
+            WebContentPreloader.shared.preloadContent(for: article)
         }
+        
         save()
         
         // Post notification for UI updates
